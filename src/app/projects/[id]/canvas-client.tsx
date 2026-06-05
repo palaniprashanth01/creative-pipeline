@@ -45,6 +45,7 @@ type Banner =
   | null;
 
 const EXAMPLES: { kind: "landing-page" | "email" | "image"; text: string }[] = [
+  // ── Landing pages (7) ──
   {
     kind: "landing-page",
     text: "Landing page hero for a new productivity app called Tempo",
@@ -53,10 +54,62 @@ const EXAMPLES: { kind: "landing-page" | "email" | "image"; text: string }[] = [
     kind: "landing-page",
     text: "Hero section for an indie coffee subscription brand",
   },
+  {
+    kind: "landing-page",
+    text: "Pricing-page hero for a tier-based SaaS analytics tool",
+  },
+  {
+    kind: "landing-page",
+    text: "About-us hero for a sustainable fashion brand from Portland",
+  },
+  {
+    kind: "landing-page",
+    text: "Waitlist signup hero for an AI writing assistant",
+  },
+  {
+    kind: "landing-page",
+    text: "Hero for a B2B cybersecurity firm targeting healthcare",
+  },
+  {
+    kind: "landing-page",
+    text: "Launch hero for a remote-team scheduling app called Sync",
+  },
+  // ── Emails (7) ──
   { kind: "email", text: "Launch email for our spring sale of running shoes" },
   { kind: "email", text: "Onboarding welcome email for a new SaaS signup" },
+  { kind: "email", text: "Black Friday email for a premium headphones brand" },
+  {
+    kind: "email",
+    text: "Cart-abandonment email for a high-end skincare store",
+  },
+  {
+    kind: "email",
+    text: "Re-engagement email for a fitness app, users inactive 30 days",
+  },
+  {
+    kind: "email",
+    text: "Customer-success check-in after the first month of usage",
+  },
+  {
+    kind: "email",
+    text: "Beta-invite email for early access to a developer tool",
+  },
+  // ── Images (6) ──
   { kind: "image", text: "A cyberpunk skyline at sunset, neon reflections" },
   { kind: "image", text: "Minimalist product shot of a ceramic mug on linen" },
+  { kind: "image", text: "Top-down flat lay of artisan pastries on marble" },
+  {
+    kind: "image",
+    text: "Editorial portrait of a chef in a stainless-steel kitchen",
+  },
+  {
+    kind: "image",
+    text: "Aerial drone shot of a winding mountain road at golden hour",
+  },
+  {
+    kind: "image",
+    text: "Macro photo of dew on a single fern leaf, soft morning light",
+  },
 ];
 
 const KIND_META = {
@@ -135,16 +188,20 @@ export function CanvasClient({
   const useExample = useCallback((text: string) => {
     setPrompt(text);
     setBanner(null);
+    setParent(null); // Bug #5 — drop any pending Improvise context.
     promptRef.current?.focus();
   }, []);
 
   const removeTile = useCallback(
     async (runId: string) => {
+      // Bug #2 — drawer was showing stale data for a tile we just deleted.
+      setDrawerId((cur) => (cur === runId ? null : cur));
       setOrder((prev) => prev.filter((r) => r !== runId));
       setTiles((prev) => {
-        const { [runId]: _drop, ...rest } = prev;
-        void _drop;
-        return rest;
+        // Bug #10 — cleaner mutation than the destructure-with-void dance.
+        const next = { ...prev };
+        delete next[runId];
+        return next;
       });
       const res = await deleteDispatch({ projectId, dispatchId: runId });
       if (res.status !== "ok") {
@@ -296,7 +353,10 @@ export function CanvasClient({
       <div className="flex-1 flex overflow-hidden">
         <main className="flex-1 overflow-y-auto">
           {order.length === 0 ? (
-            <EmptyState onExample={useExample} />
+            <EmptyState
+              onExample={useExample}
+              onSend={(text, kind) => send(text, kind, 1)}
+            />
           ) : (
             <div className="mx-auto max-w-6xl px-6 py-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {order.map((runId) => {
@@ -320,6 +380,9 @@ export function CanvasClient({
                       onEvent={(e) => onTileEvent(runId, e)}
                       onOpenDrawer={() => setDrawerId(runId)}
                       onClickDelete={() => removeTile(runId)}
+                      // Bug #4 — retry passes the original prompt + kind so we
+                      // skip the classifier on re-dispatch (intent is known).
+                      onClickRetry={() => send(t.prompt, t.kind, 1)}
                       onClickImprovise={() => {
                         if (!t.artifactId) return;
                         promptByArtifact[t.artifactId] = t.prompt;
@@ -337,7 +400,10 @@ export function CanvasClient({
           )}
         </main>
 
-        <ExamplesSidebar onPick={useExample} />
+        <ExamplesSidebar
+          onPick={useExample}
+          onSend={(text, kind) => send(text, kind, 1)}
+        />
       </div>
 
       <Composer
@@ -370,16 +436,16 @@ export function CanvasClient({
 
 function Header({ projectId, count }: { projectId: string; count: number }) {
   return (
-    <header className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface)]/60 backdrop-blur-xl px-6 py-3">
+    <header className="flex items-center justify-between border-b border-[var(--border)] bg-[var(--surface)]/60 backdrop-blur-xl px-6 py-4">
       <div className="flex items-center gap-3">
-        <div className="size-7 rounded-md bg-gradient-to-br from-[var(--accent)] to-violet-700 flex items-center justify-center text-white">
-          <Sparkles className="size-3.5" />
+        <div className="size-9 rounded-lg bg-gradient-to-br from-[var(--accent)] to-violet-700 flex items-center justify-center text-white">
+          <Sparkles className="size-4.5" />
         </div>
         <div>
-          <h1 className="text-[13px] font-semibold tracking-tight">
+          <h1 className="text-base font-semibold tracking-tight">
             Creative Pipeline
           </h1>
-          <p className="text-[10.5px] text-[var(--muted)] font-mono">
+          <p className="text-xs text-[var(--muted)] font-mono">
             {projectId.slice(0, 8)}… · {count} {count === 1 ? "tile" : "tiles"}
           </p>
         </div>
@@ -388,31 +454,49 @@ function Header({ projectId, count }: { projectId: string; count: number }) {
   );
 }
 
-function EmptyState({ onExample }: { onExample: (t: string) => void }) {
+function EmptyState({
+  onExample,
+  onSend,
+}: {
+  onExample: (t: string) => void;
+  onSend: (t: string, k: Intent) => void;
+}) {
   return (
     <div className="flex flex-col items-center justify-center px-6 py-24 text-center">
-      <h2 className="text-4xl sm:text-5xl font-semibold tracking-tight text-balance">
+      <h2 className="text-5xl sm:text-6xl font-semibold tracking-tight text-balance">
         What do you want to create?
       </h2>
-      <p className="mt-3 text-base text-[var(--muted)] text-balance max-w-md">
-        Pick one to get started, or type your own below — we&apos;ll classify
-        and stream it back.
+      <p className="mt-4 text-lg text-[var(--muted)] text-balance max-w-xl">
+        Pick a sample on the right — click the body to edit, or the arrow to
+        send it instantly. Or type your own below.
       </p>
-      <div className="mt-10 flex flex-wrap justify-center gap-2 max-w-2xl">
-        {EXAMPLES.slice(0, 3).map((ex) => {
+      <div className="mt-10 flex flex-wrap justify-center gap-2 max-w-3xl">
+        {EXAMPLES.slice(0, 6).map((ex) => {
           const Meta = KIND_META[ex.kind];
           const Icon = Meta.icon;
           return (
-            <button
+            <div
               key={ex.text}
-              type="button"
-              onClick={() => onExample(ex.text)}
-              className="group inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm hover:border-[var(--border-strong)] hover:shadow-sm transition-all"
+              className="group inline-flex items-stretch rounded-full border border-[var(--border)] bg-[var(--surface)] overflow-hidden hover:border-[var(--border-strong)] hover:shadow-sm transition-all"
             >
-              <Icon className={`size-3.5 ${Meta.tint}`} />
-              <span className="truncate max-w-[280px]">{ex.text}</span>
-              <ArrowUp className="size-3 -rotate-90 opacity-0 group-hover:opacity-60 transition-opacity" />
-            </button>
+              <button
+                type="button"
+                onClick={() => onExample(ex.text)}
+                className="inline-flex items-center gap-2 pl-4 pr-2 py-2.5 text-sm"
+              >
+                <Icon className={`size-4 ${Meta.tint}`} />
+                <span className="truncate max-w-[260px]">{ex.text}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onSend(ex.text, ex.kind)}
+                aria-label="Send now"
+                title="Send now"
+                className="px-3 border-l border-[var(--border)] text-[var(--muted)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] transition-colors"
+              >
+                <ArrowUp className="size-4" />
+              </button>
+            </div>
           );
         })}
       </div>
@@ -420,15 +504,22 @@ function EmptyState({ onExample }: { onExample: (t: string) => void }) {
   );
 }
 
-function ExamplesSidebar({ onPick }: { onPick: (t: string) => void }) {
+function ExamplesSidebar({
+  onPick,
+  onSend,
+}: {
+  onPick: (t: string) => void;
+  onSend: (t: string, k: Intent) => void;
+}) {
   return (
-    <aside className="hidden lg:flex w-80 shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface)]/40 backdrop-blur-xl overflow-y-auto">
+    <aside className="hidden lg:flex w-[22rem] shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface)]/40 backdrop-blur-xl overflow-y-auto">
       <div className="sticky top-0 z-10 px-5 py-4 border-b border-[var(--border)] bg-[var(--surface)]/80 backdrop-blur-xl">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--accent)]">
-          Try one
+        <h3 className="text-sm font-semibold uppercase tracking-[0.12em] text-[var(--accent)]">
+          Try one ({EXAMPLES.length})
         </h3>
-        <p className="mt-1 text-[11px] text-[var(--muted)]">
-          Click to drop into the composer
+        <p className="mt-1 text-xs text-[var(--muted)]">
+          Click body to edit · click <ArrowUp className="inline size-3" /> to
+          send instantly
         </p>
       </div>
       <ul className="p-3 space-y-2">
@@ -437,21 +528,33 @@ function ExamplesSidebar({ onPick }: { onPick: (t: string) => void }) {
           const Icon = Meta.icon;
           return (
             <li key={ex.text}>
-              <button
-                type="button"
-                onClick={() => onPick(ex.text)}
-                className="group w-full text-left rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 hover:border-[var(--border-strong)] hover:-translate-y-0.5 hover:shadow-[0_4px_16px_-8px_rgba(0,0,0,0.15)] transition-all"
-              >
-                <div className="flex items-center gap-2 mb-1.5">
-                  <Icon className={`size-3.5 ${Meta.tint}`} />
-                  <span className="text-[9.5px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
-                    {Meta.label}
-                  </span>
-                </div>
-                <p className="text-[12.5px] leading-snug text-[var(--foreground)]">
-                  {ex.text}
-                </p>
-              </button>
+              <div className="group flex items-stretch rounded-xl border border-[var(--border)] bg-[var(--surface)] overflow-hidden hover:border-[var(--border-strong)] hover:-translate-y-0.5 hover:shadow-[0_4px_16px_-8px_rgba(0,0,0,0.15)] transition-all">
+                <button
+                  type="button"
+                  onClick={() => onPick(ex.text)}
+                  className="flex-1 text-left px-3.5 py-3"
+                  title="Drop into composer"
+                >
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Icon className={`size-4 ${Meta.tint}`} />
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)]">
+                      {Meta.label}
+                    </span>
+                  </div>
+                  <p className="text-sm leading-snug text-[var(--foreground)]">
+                    {ex.text}
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSend(ex.text, ex.kind)}
+                  aria-label={`Send: ${ex.text}`}
+                  title="Send now"
+                  className="px-3 border-l border-[var(--border)] text-[var(--muted)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] transition-colors flex items-center"
+                >
+                  <ArrowUp className="size-4" />
+                </button>
+              </div>
             </li>
           );
         })}
@@ -525,7 +628,7 @@ function Composer({
             }}
             placeholder="What do you want to create?"
             rows={2}
-            className="w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--surface)] pl-5 pr-32 py-4 text-base leading-relaxed shadow-sm focus:border-[var(--accent)] focus:outline-none focus:ring-4 focus:ring-[var(--accent-soft)] placeholder:text-[var(--muted)] transition-all"
+            className="w-full resize-none rounded-2xl border border-[var(--border)] bg-[var(--surface)] pl-5 pr-36 py-4 text-lg leading-relaxed shadow-sm focus:border-[var(--accent)] focus:outline-none focus:ring-4 focus:ring-[var(--accent-soft)] placeholder:text-[var(--muted)] transition-all"
           />
           <div className="absolute right-3 bottom-3 flex items-center gap-2">
             <BatchPicker value={batchCount} onChange={setBatchCount} />
@@ -533,17 +636,17 @@ function Composer({
               type="submit"
               disabled={!prompt.trim() || pending}
               aria-label="Send"
-              className="inline-flex size-9 items-center justify-center rounded-xl bg-[var(--foreground)] text-[var(--background)] shadow-sm hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
+              className="inline-flex size-10 items-center justify-center rounded-xl bg-[var(--foreground)] text-[var(--background)] shadow-sm hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-opacity"
             >
               {pending ? (
-                <span className="size-2 rounded-full bg-[var(--background)] animate-pulse" />
+                <span className="size-2.5 rounded-full bg-[var(--background)] animate-pulse" />
               ) : (
-                <ArrowUp className="size-4" />
+                <ArrowUp className="size-5" />
               )}
             </button>
           </div>
         </form>
-        <div className="mt-2 flex items-center justify-between gap-1 text-[10.5px] text-[var(--muted)]">
+        <div className="mt-2 flex items-center justify-between gap-1 text-xs text-[var(--muted)]">
           <span>
             {batchCount > 1 ? `Will fan out into ${batchCount} runs.` : ""}
           </span>
@@ -571,8 +674,8 @@ function BatchPicker({
   onChange: (n: number) => void;
 }) {
   return (
-    <label className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1.5 text-[11px] text-[var(--muted)]">
-      <Layers className="size-3" />
+    <label className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-2 text-xs text-[var(--muted)]">
+      <Layers className="size-3.5" />
       <select
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}

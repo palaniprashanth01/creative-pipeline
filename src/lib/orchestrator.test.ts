@@ -143,7 +143,12 @@ describe("batch credit finalization", () => {
       { status: "done" },
       { status: "failed" },
     ]);
-    vi.mocked(settle).mockRejectedValueOnce(new Error("duplicate key"));
+    // Bug #7 — finalizer now checks the pg error code, not the message text.
+    vi.mocked(settle).mockRejectedValueOnce(
+      Object.assign(new Error("duplicate key value violates unique constraint"), {
+        code: "23505",
+      }),
+    );
 
     await finalizeBatchIfReady("batch-1", "hold-1");
 

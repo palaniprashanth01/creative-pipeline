@@ -142,8 +142,9 @@ describe("stretch dispatch behavior", () => {
       runIds: ["run-1", "run-2", "run-3"],
     });
     expect(mocks.dispatchRepo.create).toHaveBeenCalledTimes(3);
+    // image kind = 0.5 credits/run × 3 runs = 1.5 (bug #9)
     expect(hold).toHaveBeenCalledWith(
-      expect.objectContaining({ amount: 3, dispatchId: "run-1" }),
+      expect.objectContaining({ amount: 1.5, dispatchId: "run-1" }),
     );
     expect(mocks.dispatchRepo.setHold).toHaveBeenCalledTimes(3);
     expect(runDispatch).toHaveBeenCalledTimes(3);

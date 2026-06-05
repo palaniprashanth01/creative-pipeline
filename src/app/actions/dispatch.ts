@@ -5,11 +5,12 @@ import { CLASSIFIER_MODEL, classify } from "@/lib/classifier";
 import {
   CONFIDENCE_HARD_GATE,
   CONFIDENCE_SOFT_GATE,
-  HOLD_AMOUNT_PER_RUN,
+  holdAmountFor,
   IDEMPOTENCY_WINDOW_MS,
 } from "@/lib/constants";
 import { hold, isTerminal, release } from "@/lib/credits";
 import { runDispatch } from "@/lib/orchestrator";
+import { artifactRepo } from "@/lib/repos/artifacts";
 import { dispatchRepo } from "@/lib/repos/dispatches";
 import { emit } from "@/lib/run-bus";
 import { dispatchInputZ, type Intent } from "@/lib/schemas";
@@ -81,6 +82,18 @@ export async function dispatchCreative(raw: unknown): Promise<DispatchResult> {
   let confidence: number | null = null;
   let classifierModel: string | null = null;
 
+  // Bug #1 — inherit kind from parent on Improvise. A parent's kind is an
+  // implicit explicit intent; running the classifier on the bare "make it
+  // shorter" follow-up wastes a call and often fails the confidence gate.
+  if (!kind && input.parentArtifactId) {
+    try {
+      const parent = await artifactRepo.findById(input.parentArtifactId);
+      if (parent) kind = parent.kind as Intent;
+    } catch {
+      // Parent lookup is best-effort; fall through to classifier.
+    }
+  }
+
   if (!kind) {
     try {
       const cls = await classify(input.prompt);
@@ -137,9 +150,10 @@ export async function dispatchCreative(raw: unknown): Promise<DispatchResult> {
 
     // Single hold covers the whole batch — the orchestrator's finalizer
     // settles the completed portion and releases the rest.
+    // Bug #9 — hold amount varies by kind (image cheapest, landing-page priciest).
     const h = await hold({
       orgId: ctx.user.orgId,
-      amount: HOLD_AMOUNT_PER_RUN * count,
+      amount: holdAmountFor(kind) * count,
       dispatchId: runIds[0],
     });
     holdId = h.holdId;
