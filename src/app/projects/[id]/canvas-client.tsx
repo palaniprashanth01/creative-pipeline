@@ -261,9 +261,23 @@ export function CanvasClient({
   }, []);
 
   const send = useCallback(
-    (text: string, explicitIntent?: Intent, count = batchCount) => {
+    (
+      text: string,
+      explicitIntent?: Intent,
+      count = batchCount,
+      /**
+       * PR #2 review feedback: override the composer's `parent` state for
+       * flows like Retry where the *tile's own* lineage must be used and the
+       * composer's pending Improvise (if any) must NOT be silently inherited.
+       * Pass `null` to mean "no parent"; omit to fall back to composer state.
+       */
+      explicitParentArtifactId?: string | null,
+    ) => {
       if (!text.trim() || pending) return;
-      const localParent = parent;
+      const effectiveParentId =
+        explicitParentArtifactId === undefined
+          ? parent?.id
+          : explicitParentArtifactId ?? undefined;
       setBanner(null);
 
       startTransition(async () => {
@@ -271,7 +285,7 @@ export function CanvasClient({
           projectId,
           prompt: text,
           intent: explicitIntent,
-          parentArtifactId: localParent?.id,
+          parentArtifactId: effectiveParentId,
           count: count > 1 ? count : undefined,
         });
 
@@ -293,7 +307,7 @@ export function CanvasClient({
                       runId,
                       prompt: text,
                       status: "queued" as const,
-                      parentArtifactId: localParent?.id,
+                      parentArtifactId: effectiveParentId,
                     },
                   ]),
                 ),
@@ -318,7 +332,7 @@ export function CanvasClient({
               runId,
               prompt: text,
               status: "queued",
-              parentArtifactId: localParent?.id,
+              parentArtifactId: effectiveParentId,
             };
           }
           setTiles((prev) => ({ ...prev, ...newTiles }));
@@ -382,7 +396,18 @@ export function CanvasClient({
                       onClickDelete={() => removeTile(runId)}
                       // Bug #4 — retry passes the original prompt + kind so we
                       // skip the classifier on re-dispatch (intent is known).
-                      onClickRetry={() => send(t.prompt, t.kind, 1)}
+                      // PR #2 review feedback: pass the *tile's own*
+                      // parentArtifactId, not the composer's pending Improvise
+                      // state, so retries preserve lineage of failed Improvise
+                      // runs and never adopt an unrelated parent.
+                      onClickRetry={() =>
+                        send(
+                          t.prompt,
+                          t.kind,
+                          1,
+                          t.parentArtifactId ?? null,
+                        )
+                      }
                       onClickImprovise={() => {
                         if (!t.artifactId) return;
                         promptByArtifact[t.artifactId] = t.prompt;

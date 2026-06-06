@@ -90,7 +90,9 @@ export function DrawerBody({
       <StatusHero status={d.status} totalMs={total} />
 
       {/* Bug #3 — full artifact preview so reviewers can read the whole output. */}
-      {data.artifact ? <PreviewSection artifact={data.artifact} /> : null}
+      {data.artifact ? (
+        <PreviewSection artifact={data.artifact} prompt={d.prompt} />
+      ) : null}
 
       <Section title="Prompt">
         <div className="group relative">
@@ -396,18 +398,23 @@ function summarize(payload: unknown): string {
 /** Full artifact preview — bug #3. Click ctaUrl link opens in a new tab. */
 function PreviewSection({
   artifact,
+  prompt,
 }: {
   artifact: { kind: string; payload: unknown };
+  prompt: string;
 }) {
   if (artifact.kind === "image") {
     const url = (artifact.payload as { url?: string }).url;
     if (!url) return null;
+    // PR #2 review feedback: descriptive alt for screen readers. Truncate so
+    // the announcement isn't unwieldy on very long prompts.
+    const altText = `Placeholder image generated for prompt: ${prompt.slice(0, 120)}${prompt.length > 120 ? "…" : ""}`;
     return (
       <Section title="Preview">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={url}
-          alt=""
+          alt={altText}
           className="w-full rounded-lg border border-[var(--border)]"
         />
         <p className="mt-2 text-[11px] text-[var(--muted)]">

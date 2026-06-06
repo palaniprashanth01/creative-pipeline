@@ -85,12 +85,27 @@ export async function dispatchCreative(raw: unknown): Promise<DispatchResult> {
   // Bug #1 — inherit kind from parent on Improvise. A parent's kind is an
   // implicit explicit intent; running the classifier on the bare "make it
   // shorter" follow-up wastes a call and often fails the confidence gate.
-  if (!kind && input.parentArtifactId) {
+  //
+  // Tenant-scoped (PR #2 review feedback): verify the parent's dispatch is in
+  // the caller's project before trusting either its kind or the lineage link.
+  // If the parent is foreign, silently strip the parentArtifactId so we don't
+  // persist a cross-tenant lineage reference, and let the classifier run.
+  if (input.parentArtifactId) {
     try {
       const parent = await artifactRepo.findById(input.parentArtifactId);
-      if (parent) kind = parent.kind as Intent;
+      const parentDispatch = parent
+        ? await dispatchRepo.findById(parent.dispatchId)
+        : null;
+      const inProject =
+        parentDispatch?.projectId === ctx.project.id;
+      if (!inProject) {
+        input.parentArtifactId = undefined;
+      } else if (!kind) {
+        kind = parent!.kind as Intent;
+      }
     } catch {
-      // Parent lookup is best-effort; fall through to classifier.
+      // Parent lookup is best-effort; on failure, fall through to classifier
+      // and leave parentArtifactId as-is (the FK insert will surface any issue).
     }
   }
 
