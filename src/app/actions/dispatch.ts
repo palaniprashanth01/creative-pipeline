@@ -5,11 +5,12 @@ import { CLASSIFIER_MODEL, classify } from "@/lib/classifier";
 import {
   CONFIDENCE_HARD_GATE,
   CONFIDENCE_SOFT_GATE,
-  HOLD_AMOUNT_PER_RUN,
+  holdAmountFor,
   IDEMPOTENCY_WINDOW_MS,
 } from "@/lib/constants";
 import { hold, isTerminal, release } from "@/lib/credits";
 import { runDispatch } from "@/lib/orchestrator";
+import { artifactRepo } from "@/lib/repos/artifacts";
 import { dispatchRepo } from "@/lib/repos/dispatches";
 import { emit } from "@/lib/run-bus";
 import { dispatchInputZ, type Intent } from "@/lib/schemas";
@@ -81,6 +82,33 @@ export async function dispatchCreative(raw: unknown): Promise<DispatchResult> {
   let confidence: number | null = null;
   let classifierModel: string | null = null;
 
+  // Bug #1 — inherit kind from parent on Improvise. A parent's kind is an
+  // implicit explicit intent; running the classifier on the bare "make it
+  // shorter" follow-up wastes a call and often fails the confidence gate.
+  //
+  // Tenant-scoped (PR #2 review feedback): verify the parent's dispatch is in
+  // the caller's project before trusting either its kind or the lineage link.
+  // If the parent is foreign, silently strip the parentArtifactId so we don't
+  // persist a cross-tenant lineage reference, and let the classifier run.
+  if (input.parentArtifactId) {
+    try {
+      const parent = await artifactRepo.findById(input.parentArtifactId);
+      const parentDispatch = parent
+        ? await dispatchRepo.findById(parent.dispatchId)
+        : null;
+      const inProject =
+        parentDispatch?.projectId === ctx.project.id;
+      if (!inProject) {
+        input.parentArtifactId = undefined;
+      } else if (!kind) {
+        kind = parent!.kind as Intent;
+      }
+    } catch {
+      // Parent lookup is best-effort; on failure, fall through to classifier
+      // and leave parentArtifactId as-is (the FK insert will surface any issue).
+    }
+  }
+
   if (!kind) {
     try {
       const cls = await classify(input.prompt);
@@ -137,9 +165,10 @@ export async function dispatchCreative(raw: unknown): Promise<DispatchResult> {
 
     // Single hold covers the whole batch — the orchestrator's finalizer
     // settles the completed portion and releases the rest.
+    // Bug #9 — hold amount varies by kind (image cheapest, landing-page priciest).
     const h = await hold({
       orgId: ctx.user.orgId,
-      amount: HOLD_AMOUNT_PER_RUN * count,
+      amount: holdAmountFor(kind) * count,
       dispatchId: runIds[0],
     });
     holdId = h.holdId;

@@ -89,9 +89,14 @@ export function DrawerBody({
     <div className="space-y-7">
       <StatusHero status={d.status} totalMs={total} />
 
+      {/* Bug #3 — full artifact preview so reviewers can read the whole output. */}
+      {data.artifact ? (
+        <PreviewSection artifact={data.artifact} prompt={d.prompt} />
+      ) : null}
+
       <Section title="Prompt">
         <div className="group relative">
-          <p className="whitespace-pre-wrap leading-relaxed text-[13.5px] text-[var(--foreground)]">
+          <p className="whitespace-pre-wrap leading-relaxed text-sm text-[var(--foreground)]">
             {d.prompt}
           </p>
           <button
@@ -174,7 +179,7 @@ export function DrawerBody({
             }
           />
         </Grid>
-        <div className="mt-3 rounded-lg bg-[var(--surface-2)] p-3 space-y-1 font-mono text-[10.5px] text-[var(--muted)]">
+        <div className="mt-3 rounded-lg bg-[var(--surface-2)] p-3 space-y-1 font-mono text-xs text-[var(--muted)]">
           {data.ledger.length === 0 ? (
             <p className="italic">no ledger entries</p>
           ) : (
@@ -257,11 +262,13 @@ function StatusHero({ status, totalMs }: { status: string; totalMs: number | nul
       }
     >
       <div className="flex items-baseline justify-between">
-        <span className={"text-xs font-semibold uppercase tracking-wider " + cfg.text}>
+        <span
+          className={"text-sm font-semibold uppercase tracking-wider " + cfg.text}
+        >
           {cfg.label}
         </span>
         {totalMs != null ? (
-          <span className="font-mono text-[11px] text-[var(--muted)]">
+          <span className="font-mono text-xs text-[var(--muted)]">
             {totalMs < 1000 ? `${totalMs}ms` : `${(totalMs / 1000).toFixed(2)}s`}
           </span>
         ) : null}
@@ -285,7 +292,7 @@ function Section({
 }) {
   return (
     <section>
-      <h3 className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)] mb-2.5">
+      <h3 className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--muted)] mb-2.5">
         {title}
       </h3>
       {children}
@@ -315,12 +322,12 @@ function KV({
         (span === 2 ? "col-span-2" : "")
       }
     >
-      <div className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
+      <div className="text-[11px] uppercase tracking-wider text-[var(--muted)]">
         {label}
       </div>
       <div
         className={
-          "mt-0.5 text-[13px] text-[var(--foreground)] truncate " +
+          "mt-0.5 text-sm text-[var(--foreground)] truncate " +
           (mono ? "font-mono" : "font-medium")
         }
       >
@@ -343,7 +350,7 @@ function Phase({
 }) {
   if (!at) {
     return (
-      <div className="flex items-center gap-3 py-1.5 text-[12px] text-[var(--muted)]/60">
+      <div className="flex items-center gap-3 py-1.5 text-[13px] text-[var(--muted)]/60">
         <Dot />
         <span className="capitalize">{label}</span>
         <span className="ml-auto font-mono">—</span>
@@ -352,11 +359,13 @@ function Phase({
   }
   const delta = from ? new Date(at).getTime() - new Date(from).getTime() : null;
   return (
-    <div className="flex items-center gap-3 py-1.5 text-[12px]">
+    <div className="flex items-center gap-3 py-1.5 text-[13px]">
       <Dot variant={variant} />
       <span className="capitalize text-[var(--foreground)]">{label}</span>
       <span className="ml-auto font-mono text-[var(--muted)]">
-        {delta != null && delta >= 0 ? `+${delta}ms` : new Date(at).toLocaleTimeString()}
+        {delta != null && delta >= 0
+          ? `+${delta}ms`
+          : new Date(at).toLocaleTimeString()}
       </span>
     </div>
   );
@@ -384,4 +393,74 @@ function summarize(payload: unknown): string {
     if (p.url) return p.url.split("/").pop() ?? p.url;
   }
   return "creative";
+}
+
+/** Full artifact preview — bug #3. Click ctaUrl link opens in a new tab. */
+function PreviewSection({
+  artifact,
+  prompt,
+}: {
+  artifact: { kind: string; payload: unknown };
+  prompt: string;
+}) {
+  if (artifact.kind === "image") {
+    const url = (artifact.payload as { url?: string }).url;
+    if (!url) return null;
+    // PR #2 review feedback: descriptive alt for screen readers. Truncate so
+    // the announcement isn't unwieldy on very long prompts.
+    const altText = `Placeholder image generated for prompt: ${prompt.slice(0, 120)}${prompt.length > 120 ? "…" : ""}`;
+    return (
+      <Section title="Preview">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={url}
+          alt={altText}
+          className="w-full rounded-lg border border-[var(--border)]"
+        />
+        <p className="mt-2 text-[11px] text-[var(--muted)]">
+          Placeholder image — picsum seeded by prompt hash.
+        </p>
+      </Section>
+    );
+  }
+
+  const p = artifact.payload as {
+    headline?: string;
+    body?: string;
+    ctaLabel?: string;
+    ctaUrl?: string;
+  };
+  return (
+    <Section title="Preview">
+      <article className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] p-4 space-y-3">
+        {p.headline ? (
+          <h4 className="text-lg font-semibold leading-snug text-balance">
+            {p.headline}
+          </h4>
+        ) : null}
+        {p.body ? (
+          <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap text-[var(--foreground)]">
+            {p.body}
+          </p>
+        ) : null}
+        {p.ctaLabel ? (
+          p.ctaUrl && /^https?:\/\//i.test(p.ctaUrl) ? (
+            <a
+              href={p.ctaUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-md bg-[var(--foreground)] text-[var(--background)] text-sm font-medium px-3.5 py-2 hover:opacity-90 transition-opacity"
+            >
+              {p.ctaLabel}
+              <span className="opacity-60">↗</span>
+            </a>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-md bg-[var(--surface)] text-[var(--muted)] text-sm font-medium px-3.5 py-2 border border-[var(--border)]">
+              {p.ctaLabel}
+            </span>
+          )
+        ) : null}
+      </article>
+    </Section>
+  );
 }

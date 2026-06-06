@@ -10,9 +10,11 @@ import {
   Layout,
   Loader2,
   Mail,
+  RotateCw,
   Sparkles,
   X,
 } from "lucide-react";
+import { IMAGE_LOAD_TIMEOUT_MS } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type { ArtifactPayload, Intent } from "@/lib/schemas";
 
@@ -60,6 +62,7 @@ export function Tile({
   onEvent,
   onClickImprovise,
   onClickDelete,
+  onClickRetry,
   onOpenDrawer,
   parentLabel,
 }: {
@@ -67,6 +70,7 @@ export function Tile({
   onEvent?: (e: TileEvent) => void;
   onClickImprovise: () => void;
   onClickDelete: () => void;
+  onClickRetry: () => void;
   onOpenDrawer: () => void;
   parentLabel?: string;
 }) {
@@ -132,32 +136,32 @@ export function Tile({
         title="Delete"
         className={cn(
           "absolute top-2 right-2 z-10",
-          "inline-flex size-6 items-center justify-center rounded-full",
-          "bg-black/40 backdrop-blur text-white",
+          "inline-flex size-7 items-center justify-center rounded-full",
+          "bg-black/50 backdrop-blur text-white",
           "opacity-0 group-hover:opacity-100 transition-opacity",
           "hover:bg-rose-600",
         )}
       >
-        <X className="size-3.5" />
+        <X className="size-4" />
       </button>
 
-      <header className="flex items-center justify-between px-4 pt-3.5 pb-2.5 pr-10">
+      <header className="flex items-center justify-between px-4 pt-4 pb-3 pr-12">
         <div className="flex items-center gap-2 min-w-0">
           {Icon ? (
             <span className={cn("shrink-0", kindMeta?.tint)}>
-              <Icon className="size-3.5" />
+              <Icon className="size-4" />
             </span>
           ) : (
-            <span className="size-3.5 rounded-full bg-[var(--surface-2)]" />
+            <span className="size-4 rounded-full bg-[var(--surface-2)]" />
           )}
-          <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-[var(--muted)] truncate">
+          <span className="text-xs font-semibold uppercase tracking-[0.1em] text-[var(--muted)] truncate">
             {kindMeta?.label ?? "Classifying…"}
           </span>
         </div>
         <StatusBadge status={state.status} />
       </header>
 
-      <Body state={state} />
+      <Body state={state} onClickRetry={onClickRetry} />
 
       <Footer
         state={state}
@@ -193,12 +197,16 @@ function ProgressBar({ status }: { status: TileState["status"] }) {
       : status === "done"
         ? "bg-emerald-500"
         : "bg-[var(--accent)]";
-  const showShimmer = status === "queued" || status === "classified" || status === "running";
+  const showShimmer =
+    status === "queued" || status === "classified" || status === "running";
 
   return (
     <div className="absolute top-0 left-0 right-0 h-[3px] overflow-hidden bg-[var(--surface-2)] z-10">
       <div
-        className={cn("h-full transition-all duration-700 ease-out relative", tint)}
+        className={cn(
+          "h-full transition-all duration-700 ease-out relative",
+          tint,
+        )}
         style={{ width: `${pct}%` }}
       >
         {showShimmer ? (
@@ -209,15 +217,25 @@ function ProgressBar({ status }: { status: TileState["status"] }) {
   );
 }
 
+/**
+ * Bug #6 — image fallback that also fires if picsum never paints. Without
+ * the timeout the tile sits on a shimmer indefinitely on slow networks.
+ */
 function ImageWithFallback({ url }: { url: string }) {
   const [loaded, setLoaded] = useState(false);
   const [errored, setErrored] = useState(false);
 
+  useEffect(() => {
+    if (loaded || errored) return;
+    const t = setTimeout(() => setErrored(true), IMAGE_LOAD_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [loaded, errored]);
+
   if (errored) {
     return (
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-[var(--accent-soft)] to-[var(--surface-2)]">
-        <ImageOff className="size-6 text-[var(--muted)]" />
-        <span className="text-[10px] uppercase tracking-wider text-[var(--muted)]">
+        <ImageOff className="size-7 text-[var(--muted)]" />
+        <span className="text-xs uppercase tracking-wider text-[var(--muted)]">
           image unavailable
         </span>
       </div>
@@ -247,35 +265,57 @@ function ImageWithFallback({ url }: { url: string }) {
 function StatusBadge({ status }: { status: TileState["status"] }) {
   if (status === "done") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
-        <CheckCircle2 className="size-3" />
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+        <CheckCircle2 className="size-3.5" />
         Done
       </span>
     );
   }
   if (status === "error") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-400">
-        <AlertCircle className="size-3" />
+      <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 dark:bg-rose-950/50 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-400">
+        <AlertCircle className="size-3.5" />
         Failed
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-soft)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--accent)]">
-      <Loader2 className="size-3 animate-spin" />
-      {status === "queued" ? "Queued" : status === "classified" ? "Routed" : "Streaming"}
+    <span className="inline-flex items-center gap-1 rounded-full bg-[var(--accent-soft)] px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-[var(--accent)]">
+      <Loader2 className="size-3.5 animate-spin" />
+      {status === "queued"
+        ? "Queued"
+        : status === "classified"
+          ? "Routed"
+          : "Streaming"}
     </span>
   );
 }
 
-function Body({ state }: { state: TileState }) {
+function Body({
+  state,
+  onClickRetry,
+}: {
+  state: TileState;
+  onClickRetry: () => void;
+}) {
   if (state.status === "error") {
     return (
-      <div className="px-4 py-3 min-h-[7.5rem] flex items-start">
-        <p className="text-xs text-rose-600 dark:text-rose-400 leading-relaxed">
+      // Bug #4 — Retry button on failed tiles so the operator doesn't have to retype.
+      <div className="px-4 py-4 min-h-[7.5rem] flex flex-col items-start gap-3">
+        <p className="text-sm text-rose-600 dark:text-rose-400 leading-relaxed">
           {state.error ?? "Something went wrong."}
         </p>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClickRetry();
+          }}
+          className="inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-xs font-medium hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] transition-colors"
+        >
+          <RotateCw className="size-3.5" />
+          Retry
+        </button>
       </div>
     );
   }
@@ -287,7 +327,7 @@ function Body({ state }: { state: TileState }) {
         {url ? (
           <>
             <ImageWithFallback url={url} />
-            <span className="absolute bottom-2 left-2 rounded-full bg-black/60 backdrop-blur-sm text-white text-[9px] font-medium uppercase tracking-wider px-2 py-0.5">
+            <span className="absolute bottom-2 left-2 rounded-full bg-black/60 backdrop-blur-sm text-white text-[10px] font-medium uppercase tracking-wider px-2 py-0.5">
               placeholder
             </span>
           </>
@@ -302,9 +342,9 @@ function Body({ state }: { state: TileState }) {
     | { headline?: string; body?: string; ctaLabel?: string; ctaUrl?: string }
     | undefined;
   return (
-    <div className="px-4 py-3 space-y-2.5 min-h-[8rem]">
+    <div className="px-4 py-4 space-y-3 min-h-[8.5rem]">
       {p?.headline ? (
-        <h3 className="text-[15px] font-semibold leading-snug text-balance">
+        <h3 className="text-base font-semibold leading-snug text-balance">
           {p.headline}
         </h3>
       ) : (
@@ -314,7 +354,7 @@ function Body({ state }: { state: TileState }) {
         </div>
       )}
       {p?.body ? (
-        <p className="text-[12.5px] text-[var(--muted)] leading-relaxed line-clamp-3">
+        <p className="text-sm text-[var(--muted)] leading-relaxed line-clamp-3">
           {p.body}
         </p>
       ) : (
@@ -330,13 +370,13 @@ function Body({ state }: { state: TileState }) {
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="inline-flex items-center gap-1 rounded-md bg-[var(--foreground)] text-[var(--background)] text-[11px] font-medium px-2.5 py-1 hover:opacity-90 transition-opacity"
+            className="inline-flex items-center gap-1 rounded-md bg-[var(--foreground)] text-[var(--background)] text-xs font-medium px-3 py-1.5 hover:opacity-90 transition-opacity"
           >
             {p.ctaLabel}
             <span className="opacity-60">↗</span>
           </a>
         ) : (
-          <span className="inline-flex items-center gap-1 rounded-md bg-[var(--surface-2)] text-[var(--muted)] text-[11px] font-medium px-2.5 py-1">
+          <span className="inline-flex items-center gap-1 rounded-md bg-[var(--surface-2)] text-[var(--muted)] text-xs font-medium px-3 py-1.5">
             {p.ctaLabel}
           </span>
         )
@@ -355,16 +395,16 @@ function Footer({
   onImprovise: (e: React.MouseEvent) => void;
 }) {
   return (
-    <footer className="px-4 py-2.5 border-t border-[var(--border)] flex items-center justify-between gap-2">
+    <footer className="px-4 py-3 border-t border-[var(--border)] flex items-center justify-between gap-2">
       <div className="min-w-0 flex-1">
         {parentLabel ? (
-          <span className="inline-flex items-center gap-1.5 text-[10.5px] text-[var(--muted)] truncate">
-            <GitFork className="size-3 shrink-0" />
+          <span className="inline-flex items-center gap-1.5 text-xs text-[var(--muted)] truncate">
+            <GitFork className="size-3.5 shrink-0" />
             <span className="truncate">Improvised from → {parentLabel}</span>
           </span>
         ) : (
           <span
-            className="text-[10.5px] italic text-[var(--muted)] truncate block"
+            className="text-xs italic text-[var(--muted)] truncate block"
             title={state.prompt}
           >
             {state.prompt}
@@ -376,13 +416,13 @@ function Footer({
         onClick={onImprovise}
         disabled={state.status !== "done"}
         className={cn(
-          "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium shrink-0",
+          "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium shrink-0",
           "text-[var(--muted)] hover:text-[var(--accent)] hover:bg-[var(--accent-soft)]",
           "disabled:opacity-25 disabled:cursor-not-allowed disabled:hover:bg-transparent",
           "transition-colors",
         )}
       >
-        <Sparkles className="size-3" />
+        <Sparkles className="size-3.5" />
         Improvise
       </button>
     </footer>

@@ -1,6 +1,6 @@
 # Creative Pipeline — Skala Media take-home
 
-**Loom:** _< paste public Loom URL here once recorded >_
+**Loom:** https://www.loom.com/share/f5bff3e4bdf54cfc8494b90a8d4943ac
 
 A chat-driven creative generator. Operator types a prompt → classifier picks intent (image / landing-page / email) → an LLM streams the result into a tile on the canvas. Credits are reserved before work starts, settled on success, released on classifier-reject / render-error / client-abort. Lineage threads each tile back to its parent. A "Why this?" drawer answers from the DB without re-calling the LLM.
 

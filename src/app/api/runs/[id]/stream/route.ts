@@ -1,5 +1,6 @@
-import type { NextRequest } from "next/server";
-import { SSE_HEARTBEAT_MS } from "@/lib/constants";
+import { NextResponse, type NextRequest } from "next/server";
+import { SSE_HEARTBEAT_MS, SSE_TERMINAL_RETRY_MS } from "@/lib/constants";
+import { authenticateAndAuthorize } from "@/lib/auth";
 import { isTerminal, release } from "@/lib/credits";
 import { finalizeBatchIfReady } from "@/lib/orchestrator";
 import { dispatchRepo } from "@/lib/repos/dispatches";
@@ -11,6 +12,10 @@ export const dynamic = "force-dynamic";
 /**
  * SSE endpoint for a single run's progress. Emits at minimum:
  * `classified → dispatched → partial* → done | error`.
+ *
+ * Auth: gates on ownership of the dispatch's project before opening the
+ * stream. Without this, anyone with a runId could subscribe to another
+ * tenant's classified/partial/done events (horizontal IDOR).
  *
  * Behaviour:
  *  - On connect, replays any events buffered before subscription so the
@@ -27,6 +32,19 @@ export async function GET(
 ) {
   const { id: runId } = await params;
   const encoder = new TextEncoder();
+
+  // Gate BEFORE opening the stream so a forbidden caller never gets a
+  // text/event-stream response (which they might tail forever).
+  const initial = await dispatchRepo.findById(runId);
+  if (!initial) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+  try {
+    await authenticateAndAuthorize(initial.projectId);
+  } catch {
+    // Mirror the not-found response so we don't leak existence of the run.
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -68,6 +86,16 @@ export async function GET(
       const unsub = subscribe(runId, (e) => {
         send(e);
         if (e.type === "done" || e.type === "error") {
+          // Bug #8 — tell the browser EventSource to wait a long time before
+          // reconnecting, since the run is terminal and there's nothing left
+          // to stream. Defeats the auto-reconnect-on-close behaviour.
+          try {
+            controller.enqueue(
+              encoder.encode(`retry: ${SSE_TERMINAL_RETRY_MS}\n\n`),
+            );
+          } catch {
+            /* already closed */
+          }
           unsub();
           clearInterval(heartbeat);
           close();

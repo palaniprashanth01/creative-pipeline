@@ -1,4 +1,4 @@
-import { HOLD_AMOUNT_PER_RUN } from "./constants";
+import { holdAmountFor } from "./constants";
 import { isTerminal, netHeld, release, settle } from "./credits";
 import {
   IMAGE_MODEL,
@@ -135,25 +135,36 @@ export async function finalizeBatchIfReady(
 
     const completed = siblings.filter((s) => s.status === "done").length;
     const failed = siblings.length - completed;
+    // Bug #9 — use the variable per-kind hold amount; all siblings in a batch
+    // share the same kind, so peek at the first one.
+    const perRun = holdAmountFor(siblings[0]?.intent ?? null);
 
     if (completed > 0) {
       try {
-        await settle(holdId, completed * HOLD_AMOUNT_PER_RUN);
+        await settle(holdId, completed * perRun);
       } catch (e) {
-        if (!/duplicate|unique/i.test(String(e))) throw e;
+        // Bug #7 — check pg error code (23505 = unique_violation) instead of
+        // regex-matching the message text, which differs across pg versions.
+        if (!isUniqueViolation(e)) throw e;
         // Another sibling beat us to the settle write — fine.
       }
     }
     if (failed > 0) {
       try {
-        await release(holdId, failed * HOLD_AMOUNT_PER_RUN);
+        await release(holdId, failed * perRun);
       } catch (e) {
-        if (!/duplicate|unique/i.test(String(e))) throw e;
+        if (!isUniqueViolation(e)) throw e;
       }
     }
   } catch (err) {
     console.error("[orchestrator] finalizeBatch failed:", err);
   }
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { code?: string; cause?: { code?: string } };
+  return e.code === "23505" || e.cause?.code === "23505";
 }
 
 /** Wraps noisy upstream error messages into one short user-facing line. */
